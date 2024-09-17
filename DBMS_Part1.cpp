@@ -14,8 +14,8 @@ using namespace std;
 class Row {
     public:
     uint32_t id;
-    string username;
-    string email;
+    char username[COLUMN_USERNAME_SIZE];
+    char email[COLUMN_EMAIL_SIZE];
 };
 const uint32_t ID_SIZE = sizeof(Row::id);
 const uint32_t USERNAME_SIZE = sizeof(Row::username);
@@ -136,8 +136,8 @@ PrepareResult prepareInsert(InputBuffer* inputBuffer, Statement* statement) {
     }
 
     statement->rowToInsert.id = id;
-    statement->rowToInsert.username = username;
-    statement->rowToInsert.email = email;
+    strcpy(statement->rowToInsert.username, username.c_str());
+    strcpy(statement->rowToInsert.email, email.c_str());
 
     return PREPARE_SUCCESS;
 
@@ -166,19 +166,20 @@ void* RowSlot(Table* table, uint32_t rowNum) {
 }
 
 void SerializeRow(Row* source, void* destination) {
+
     memcpy(destination + ID_OFFSET, &(source->id), ID_SIZE);
-    memcpy(destination + USERNAME_OFFSET, &(source->username), USERNAME_SIZE);
-    memcpy(destination + EMAIL_OFFSET, &(source->email), EMAIL_SIZE);
+    memcpy(destination + USERNAME_OFFSET, source->username, USERNAME_SIZE);
+    memcpy(destination + EMAIL_OFFSET, source->email, EMAIL_SIZE);
 }
 
-void DeserializeRow(void* source, Row* destination) {
+void DeserializeRow(void* source, Row* destination) {   
     memcpy(&(destination->id), source + ID_OFFSET, ID_SIZE);
-    memcpy(&(destination->username), source + USERNAME_OFFSET, USERNAME_SIZE);
-    memcpy(&(destination->email), source + EMAIL_OFFSET, EMAIL_SIZE);
+    memcpy((destination->username), source + USERNAME_OFFSET, USERNAME_SIZE);
+    memcpy((destination->email), source + EMAIL_OFFSET, EMAIL_SIZE);
 }
 
 void PrintRow(Row* row) {
-    printf("(%d, %s, %s)\n", row->id, row->username, row->email);
+    cout<< "(" << row->id << "," << row->username <<"," << row->email << ")\n";
 }
 
 ExecuteResult ExecuteInsert(Statement* statement, Table* table) {
@@ -206,7 +207,6 @@ ExecuteResult ExecuteStatement(Statement* statement, Table* table) {
         return ExecuteInsert(statement, table);
         case (STATEMENT_SELECT):
         return ExecuteSelect(statement, table);
-        break;
     }
 }
 
