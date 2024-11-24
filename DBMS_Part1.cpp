@@ -155,7 +155,7 @@ bool IsNodeRoot(void* node) {
 }
 
 uint32_t* NodeParent(void* node) {
-    return (uint32_t*)(node + PARENT_POINTER_OFFSET);
+    return (uint32_t*) (node + PARENT_POINTER_OFFSET);
 }
 
 void SetNodeRoot(void* node, bool isRoot) {
@@ -770,7 +770,7 @@ void LeafNodeSplitAndInsert(Cursor* cursor, uint32_t key, Row* value) {
     *LeafNodeNextLeaf(newNode) = *LeafNodeNextLeaf(oldNode);
     *LeafNodePrevLeaf(newNode) = cursor->pageNum;
     *LeafNodeNextLeaf(oldNode) = newPageNum;
-    *LeafNodePrevLeaf(LeafNodeNextLeaf(oldNode)) = newPageNum;
+    *LeafNodePrevLeaf(LeafNodeNextLeaf(newNode)) = newPageNum;
 
     for(int32_t i = LEAF_NODE_MAX_CELLS; i>=0; i--) {
         void* destinationNode;
@@ -799,6 +799,7 @@ void LeafNodeSplitAndInsert(Cursor* cursor, uint32_t key, Row* value) {
     *(LeafNodeNumCells(newNode)) = LEAF_NODE_RIGHT_SPLIT_COUNT;
 
     if(IsNodeRoot(oldNode)) {
+       
         return CreateNewRoot(cursor->table, newPageNum);
     }
     else {
@@ -1123,7 +1124,11 @@ void MergeSiblingLeftInternal(Cursor* cursor, int indexInParent, void* node, voi
 }
 
 void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
+     
     void* node = GetPage(cursor->table->pager, cursor->pageNum);
+    cout<<*LeafNodeNextLeaf(node);
+    cout<<'\n';
+    cout<<*NodeParent(GetPage(cursor->table->pager, *LeafNodeNextLeaf(node)));
     int sizeOfNode;
     bool minCapacityInNode;
     if(GetNodeType(node) == NODE_LEAF)  {
@@ -1144,30 +1149,35 @@ void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
             uint32_t next = *LeafNodeNextLeaf(node);
             void* prevNode = NULL;
             void* nextNode = NULL;
+
     
-            if(prev)
+            if(prev) {
+               
             void* prevNode = GetPage(cursor->table->pager, prev);
-            if(next)
+            }
+            if(next) {
+                
             void* nextNode = GetPage(cursor->table->pager, next);
-            cout<< "Hey";
-            cout<< *NodeParent(nextNode);
-            if(next && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(nextNode) > LEAF_NODE_MIN_CELLS) {
-                cout<<"1";
+            
+            }
+
+            if(next && *NodeParent(GetPage(cursor->table->pager, *LeafNodeNextLeaf(node))) == *NodeParent(node) && *LeafNodeNumCells(nextNode) > LEAF_NODE_MIN_CELLS) {
+              
                 BorrowFromRightSiblingLeaf(cursor, rowIdToDelete, node, next);
             }
 
-            if(prev && (*NodeParent(nextNode) == *NodeParent(node) || (*NodeParent(nextNode) == 0 && *NodeParent(node) == 0)) && *LeafNodeNumCells(prevNode) > LEAF_NODE_MIN_CELLS) {
-                cout<<"2";
+            if(prev && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) > LEAF_NODE_MIN_CELLS) {
+              
                 BorrowFromLeftSiblingLeaf(cursor, rowIdToDelete, node, prev);
             }
 
-            if(next && (*NodeParent(nextNode) == *NodeParent(node) || (*NodeParent(nextNode) == 0 && *NodeParent(node) == 0)) && *LeafNodeNumCells(nextNode) <= LEAF_NODE_MIN_CELLS) {
-                cout<<"3";
+            if(next && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(nextNode) <= LEAF_NODE_MIN_CELLS) {
+             
                 MergeSiblingRightLeaf(cursor, rowIdToDelete, node, next);
             }
 
-            if(prev && (*NodeParent(nextNode) == *NodeParent(node) || (*NodeParent(nextNode) == 0 && *NodeParent(node) == 0)) && *LeafNodeNumCells(prevNode) <= LEAF_NODE_MIN_CELLS) {
-                cout<<"4";
+            if(prev && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) <= LEAF_NODE_MIN_CELLS) {
+              
                 MergeSiblingLeftLeaf(cursor, rowIdToDelete, node, next);
             }
         }
