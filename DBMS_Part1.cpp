@@ -389,7 +389,7 @@ Cursor* TableFind(Table* table, uint32_t key) {
 
 Cursor* TableStart(Table* table) {
     Cursor* cursor = TableFind(table, 0);
-    void* node =GetPage(table->pager, cursor->pageNum);
+    void* node = GetPage(table->pager, cursor->pageNum);
     uint32_t numCells = *LeafNodeNumCells(node);
     cursor->endOfTable = (numCells == 0);
 }
@@ -589,9 +589,11 @@ void SerializeRow(Row* source, void* destination) {
 }
 
 void DeserializeRow(void* source, Row* destination) {   
-    memcpy(&(destination->id), source + ID_OFFSET, ID_SIZE);
+    uint32_t id;
+    memcpy(&id, (source + ID_OFFSET), ID_SIZE);
     memcpy((destination->username), source + USERNAME_OFFSET, USERNAME_SIZE);
     memcpy((destination->email), source + EMAIL_OFFSET, EMAIL_SIZE);
+    memcpy(&(destination->id), &id, ID_SIZE);
 }
 
 void PrintRow(Row* row) {
@@ -615,7 +617,7 @@ void CreateNewRoot(Table* table, uint32_t right_child_page_num) {
   Re-initialize root page to contain the new root node.
   New root node points to two children.
   */
-
+ cout<<"Inside CreateNew Root\n";
   void* root = GetPage(table->pager, table->rootPageNum);
   void* right_child = GetPage(table->pager, right_child_page_num);
   uint32_t left_child_page_num = GetUnusedPageNum(table->pager);
@@ -635,7 +637,7 @@ void CreateNewRoot(Table* table, uint32_t right_child_page_num) {
         *NodeParent(child) = left_child_page_num;
     }
     child = GetPage(table->pager, *InternalNodeRightChild(left_child));
-    *NodeParent(left_child) = left_child_page_num;
+    *NodeParent(child) = left_child_page_num;
   }
   /* Root node is a new internal node with one key and two children */
   InitializeInternalNode(root);
@@ -649,10 +651,19 @@ void CreateNewRoot(Table* table, uint32_t right_child_page_num) {
   *NodeParent(right_child) = table->rootPageNum;
   *LeafNodeNextLeaf(left_child) = right_child_page_num;
   *LeafNodePrevLeaf(right_child) = left_child_page_num;
+
+  if(GetNodeType(right_child) == NODE_INTERNAL) {
+    cout<<"here";
+    if(*InternalNodeRightChild(right_child) == INVALID_PAGE_NUM) {
+        cout<<"YESYES";
+    }
+  }
 }
 
 void UpdateInternalNodeKey(void* node, uint32_t oldKey, uint32_t newKey) {
     uint32_t oldChildIndex = InternalNodeFindChild(node, oldKey);
+    cout<< "The index in UpdateInternalNodeKey is";
+    cout<< oldChildIndex;
     *InternalNodeKey(node, oldChildIndex) = newKey;
 }
 
@@ -664,15 +675,19 @@ void InternalNodeInsert(Table* table, uint32_t parentPageNum, uint32_t childPage
      * @brief Add a new child/key pair to parent that corresponds to child
      * 
      */
-
+    cout<<"Inside InternalNodeInsert\n";
+    cout<<"Getting parent";
     void* parent = GetPage(table->pager, parentPageNum);
+    cout<<"getting child";
     void* child = GetPage(table->pager, childPageNum);
+    cout<< "Gotten child";
     uint32_t childMinKey = GetNodeMinKey(child);
     uint32_t index = InternalNodeFindChild(parent, childMinKey);
 
     uint32_t originalNumKeys = *InternalNodeNumKeys(parent);
 
     if(originalNumKeys >= INTERNAL_NODE_MAX_CELLS) {
+        cout<<"Entering InpternalNode Split an diNsert";
         InternalNodeSplitAndInsert(table, parentPageNum, childPageNum);
         return;
     }
@@ -680,19 +695,22 @@ void InternalNodeInsert(Table* table, uint32_t parentPageNum, uint32_t childPage
     uint32_t rightChildPageNum = *InternalNodeRightChild(parent);
     // An internal node with a right child of INVALID_PAGE_NUM is empty
 
+    cout<<rightChildPageNum;
     if(rightChildPageNum == INVALID_PAGE_NUM) {
+        cout<<"Child min key";cout<<childMinKey;
         *InternalNodeRightChild(parent) = childPageNum;
         return;
     }
-
+    cout<<"Geeting the right child";
     void* rightChild = GetPage(table->pager, rightChildPageNum);
+    cout<<"get the righ tchild";
     *InternalNodeNumKeys(parent) = originalNumKeys + 1;
 
     if(childMinKey > GetNodeMaxKey(table->pager, rightChild)) {
         // Replace Right Child
 
         *InternalNodeChild(parent, originalNumKeys) = rightChildPageNum;
-        *InternalNodeKey(parent, originalNumKeys) = GetNodeMinKey(child);
+        *InternalNodeKey(parent, originalNumKeys) = childMinKey;
         *InternalNodeRightChild(parent) = childPageNum;
     }
     else {
@@ -708,19 +726,21 @@ void InternalNodeInsert(Table* table, uint32_t parentPageNum, uint32_t childPage
 }
 
 void InternalNodeSplitAndInsert(Table* table, uint32_t parentPageNum, uint32_t childPageNum) {
+    cout<<"Inside InternalNodeSplitAndInsert\n";
     uint32_t oldPageNum = parentPageNum;
     void* oldNode = GetPage(table->pager, parentPageNum);
-    uint32_t oldMin = GetNodeMinKey(oldNode);
+    uint32_t oldMin = GetNodeMaxKey(oldNode);
     void* child = GetPage(table->pager, childPageNum);
     uint32_t childMin = GetNodeMinKey(child);
     uint32_t newPageNum = GetUnusedPageNum(table->pager);
-
+    
     uint32_t splittingRoot = IsNodeRoot(oldNode);
 
     void* parent;
     void* newNode;
     if(splittingRoot) {
         CreateNewRoot(table, newPageNum);
+        cout<<(*InternalNodeRightChild(GetPage(table->pager, newPageNum)));
         parent = GetPage(table->pager, table->rootPageNum);
         oldPageNum = *InternalNodeChild(parent, 0);
         oldNode = GetPage(table->pager, oldPageNum);
@@ -733,6 +753,7 @@ void InternalNodeSplitAndInsert(Table* table, uint32_t parentPageNum, uint32_t c
 
     uint32_t* oldNumKeys = InternalNodeNumKeys(oldNode);
     uint32_t curPageNum = *InternalNodeRightChild(oldNode);
+    cout<<"Right child needed";cout<<curPageNum;
     void* cur = GetPage(table->pager, curPageNum);
     InternalNodeInsert(table, newPageNum, curPageNum);
     *NodeParent(cur) = newPageNum;
@@ -746,7 +767,7 @@ void InternalNodeSplitAndInsert(Table* table, uint32_t parentPageNum, uint32_t c
         *NodeParent(cur) = newPageNum;
         (*oldNumKeys)--; 
     }
-
+    cout<<"Old node(left child now) has %d", *oldNumKeys;
     *InternalNodeRightChild(oldNode) = *InternalNodeChild(oldNode, *oldNumKeys - 1);
     uint32_t maxAfterSplit = GetNodeMaxKey(oldNode);
     uint32_t destinationPageNum = childMin < maxAfterSplit ? oldPageNum : newPageNum;
@@ -761,8 +782,9 @@ void InternalNodeSplitAndInsert(Table* table, uint32_t parentPageNum, uint32_t c
 }
 
 void LeafNodeSplitAndInsert(Cursor* cursor, uint32_t key, Row* value) {
+    cout<< "Inside Leaf Node to insert\n";
     void* oldNode = GetPage(cursor->table->pager, cursor->pageNum);
-    uint32_t oldMin = GetNodeMinKey(oldNode);
+    uint32_t oldMin = GetNodeMaxKey(oldNode);
     uint32_t newPageNum = GetUnusedPageNum(cursor->table->pager);
     void* newNode = GetPage(cursor->table->pager, newPageNum);
     InitializeLeafNode(newNode);
@@ -806,6 +828,9 @@ void LeafNodeSplitAndInsert(Cursor* cursor, uint32_t key, Row* value) {
         uint32_t parentPageNum = *NodeParent(oldNode);
         uint32_t newMin = GetNodeMinKey(newNode);
         void* parent = GetPage(cursor->table->pager, parentPageNum);
+        cout<< oldMin;
+        cout<<'\n';
+        cout<< newMin;
         UpdateInternalNodeKey(parent, oldMin, newMin);
         InternalNodeInsert(cursor->table, parentPageNum, newPageNum);
         return;
@@ -848,6 +873,10 @@ void InternalNodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
         while(GetNodeType(child) != NODE_LEAF) {
             child = GetPage(cursor->table->pager, *InternalNodeChild(node, 0));
         }
+        if(*LeafNodeNumCells(child) == 0) {
+            *InternalNodeNumKeys(node) = *InternalNodeNumKeys(node) - 1;
+            return;
+        }
         *InternalNodeKey(node, indexOfKey) = *LeafNodeKey(child, 0);
     }
 }
@@ -859,7 +888,7 @@ void LeafNodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
         memcpy(LeafNodeCell(node, i-1), LeafNodeCell(node, i), LEAF_NODE_CELL_SIZE);
     }
     *LeafNodeNumCells(node) = numOfCells - 1;
-    if(*NodeParent(node)) {
+    if(*NodeParent(node) != NULL) {
         void* parent = GetPage(cursor->table->pager, *NodeParent(node));
 
         //If the node is the rightmost child of the parent
@@ -887,16 +916,17 @@ void BorrowFromRightSiblingLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* no
     void* next = GetPage(cursor->table->pager, nextNode);
     int numOfCells = *LeafNodeNumCells(node);
     uint32_t key = *LeafNodeKey(next, 0);
-    Row* rowToShift;
-    DeserializeRow(LeafNodeValue(next, 0), rowToShift);
-    SerializeRow(rowToShift, LeafNodeValue(node, numOfCells));
+    Row rowToShift;
+    DeserializeRow(LeafNodeValue(next, 0), &rowToShift);
+    SerializeRow(&rowToShift, LeafNodeValue(node, numOfCells));
     *LeafNodeKey(node, numOfCells) = *LeafNodeKey(next, 0);
     for(int i=1; i<*LeafNodeNumCells(next); i++) {
-        Row* row;
-        DeserializeRow(LeafNodeValue(next, i), row);
-        SerializeRow(row, LeafNodeValue(next, i - 1));
+        Row row;
+        DeserializeRow(LeafNodeValue(next, i), &row);
+        SerializeRow(&row, LeafNodeValue(next, i - 1));
         *LeafNodeKey(next, i - 1) = *LeafNodeKey(next, i);
     }
+   
     *LeafNodeNumCells(node) = numOfCells + 1;
     *LeafNodeNumCells(next) = *LeafNodeNumCells(next) - 1;
     void* parent = GetPage(cursor->table->pager, *NodeParent(next));
@@ -920,15 +950,15 @@ void BorrowFromLeftSiblingLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* nod
     void* prev = GetPage(cursor->table->pager, prevNode);
     int numOfCells = *LeafNodeNumCells(node);
     uint32_t key = *LeafNodeKey(prev, *LeafNodeNumCells(prev) - 1);
-    Row* rowToShift;
-    DeserializeRow(LeafNodeValue(prev, *LeafNodeNumCells(prev) - 1), rowToShift);
+    Row rowToShift;
+    DeserializeRow(LeafNodeValue(prev, *LeafNodeNumCells(prev) - 1), &rowToShift);
     for(int i=0; i<*LeafNodeNumCells(node); i++) {
-        Row* row;
-        DeserializeRow(LeafNodeValue(node, i), row);
-        SerializeRow(row, LeafNodeValue(node, i + 1));
+        Row row;
+        DeserializeRow(LeafNodeValue(node, i), &row);
+        SerializeRow(&row, LeafNodeValue(node, i + 1));
         *LeafNodeKey(node, i + 1) = *LeafNodeKey(node, i);
     }
-    SerializeRow(rowToShift, LeafNodeValue(node, 0));
+    SerializeRow(&rowToShift, LeafNodeValue(node, 0));
     *LeafNodeKey(node, 0) = key;
     *LeafNodeNumCells(node) = numOfCells + 1;
     *LeafNodeNumCells(prev) = *LeafNodeNumCells(prev) - 1;
@@ -958,9 +988,9 @@ void MergeSiblingLeftLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, ui
     
     int index = *LeafNodeNumCells(prev);
     for(int i=0; i<*LeafNodeNumCells(node); i++) {
-        Row* row;
-        DeserializeRow(LeafNodeValue(node, i), row);
-        SerializeRow(row, LeafNodeValue(prev, index));
+        Row row;
+        DeserializeRow(LeafNodeValue(node, i), &row);
+        SerializeRow(&row, LeafNodeValue(prev, index));
         *LeafNodeKey(prev, index) = *LeafNodeKey(node, i);
         index++;
     }
@@ -989,9 +1019,9 @@ void MergeSiblingRightLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, u
     void* parent = GetPage(cursor->table->pager, *NodeParent(next));
     int index = *LeafNodeNumCells(node);
     for(int i=0; i<*LeafNodeNumCells(next);i++) {
-        Row* row;
-        DeserializeRow(LeafNodeValue(next, i), row);
-        SerializeRow(row, LeafNodeValue(node, index));
+        Row row;
+        DeserializeRow(LeafNodeValue(next, i), &row);
+        SerializeRow(&row, LeafNodeValue(node, index));
         *LeafNodeKey(node, index) = *LeafNodeKey(next, i);
         index++;
     }
@@ -1126,9 +1156,6 @@ void MergeSiblingLeftInternal(Cursor* cursor, int indexInParent, void* node, voi
 void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
      
     void* node = GetPage(cursor->table->pager, cursor->pageNum);
-    cout<<*LeafNodeNextLeaf(node);
-    cout<<'\n';
-    cout<<*NodeParent(GetPage(cursor->table->pager, *LeafNodeNextLeaf(node)));
     int sizeOfNode;
     bool minCapacityInNode;
     if(GetNodeType(node) == NODE_LEAF)  {
@@ -1152,21 +1179,18 @@ void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
 
     
             if(prev) {
-               
-            void* prevNode = GetPage(cursor->table->pager, prev);
+            prevNode = GetPage(cursor->table->pager, prev);
             }
             if(next) {
-                
-            void* nextNode = GetPage(cursor->table->pager, next);
+            nextNode = GetPage(cursor->table->pager, next);
             
             }
 
-            if(next && *NodeParent(GetPage(cursor->table->pager, *LeafNodeNextLeaf(node))) == *NodeParent(node) && *LeafNodeNumCells(nextNode) > LEAF_NODE_MIN_CELLS) {
-              
+            if(next && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(nextNode) > LEAF_NODE_MIN_CELLS) {
                 BorrowFromRightSiblingLeaf(cursor, rowIdToDelete, node, next);
             }
 
-            if(prev && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) > LEAF_NODE_MIN_CELLS) {
+            if(prev && *NodeParent(prevNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) > LEAF_NODE_MIN_CELLS) {
               
                 BorrowFromLeftSiblingLeaf(cursor, rowIdToDelete, node, prev);
             }
@@ -1176,17 +1200,20 @@ void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
                 MergeSiblingRightLeaf(cursor, rowIdToDelete, node, next);
             }
 
-            if(prev && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) <= LEAF_NODE_MIN_CELLS) {
+            if(prev && *NodeParent(prevNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) <= LEAF_NODE_MIN_CELLS) {
               
                 MergeSiblingLeftLeaf(cursor, rowIdToDelete, node, next);
             }
         }
         else if(IsNodeRoot(node)) {
-            if(*InternalNodeNumKeys(node) == 0 && *InternalNodeChild(node, 0)) {
-                uint32_t child = *InternalNodeChild(node, 0);
+            if(*InternalNodeNumKeys(node) == 0) {
+                uint32_t child = *InternalNodeRightChild(node);
                 cursor->table->rootPageNum = child;
-                void* root = GetPage(cursor->table->pager, child);
-                *NodeParent(root) = NULL;
+                void* root = GetPage(cursor->table->pager, cursor->table->rootPageNum);
+                SetNodeRoot(root, true);
+                SetNodeType(root, NODE_LEAF);
+                *LeafNodeNextLeaf(root) = NULL;
+                *LeafNodePrevLeaf(root) = NULL;
             }
             return;
         }
@@ -1444,7 +1471,7 @@ int main(int argc, char* argv[]) {
             break;
             
         }
-        PrintTree(table->pager, 0, 1);
+        PrintTree(table->pager, table->rootPageNum, 1);
     }
     
     return 0;
