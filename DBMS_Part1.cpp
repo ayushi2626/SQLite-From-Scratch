@@ -57,7 +57,7 @@ const uint32_t LEAF_NODE_VALUE_SIZE = ROW_SIZE;
 const uint32_t LEAF_NODE_VALUE_OFFSET = LEAF_NODE_KEY_SIZE + LEAF_NODE_KEY_OFFSET;
 const uint32_t LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE;
 const uint32_t LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE;
-const uint32_t LEAF_NODE_MIN_CELLS = 1;
+const uint32_t LEAF_NODE_MIN_CELLS = 2;
 const uint32_t LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE;
 const uint32_t LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1)/2;
 const uint32_t LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_SPLIT_COUNT;
@@ -73,7 +73,7 @@ const uint32_t INTERNAL_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + INTERNAL_NO
 const uint32_t INTERNAL_NODE_KEY_SIZE = sizeof(uint32_t);
 const uint32_t INTERNAL_NODE_CHILD_SIZE = sizeof(uint32_t);
 const uint32_t INTERNAL_NODE_CELL_SIZE = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE;
-const uint32_t INTERNAL_NODE_MIN_CELLS = 1;
+const uint32_t INTERNAL_NODE_MIN_CELLS = 2;
 const uint32_t INTERNAL_NODE_MAX_CELLS = 3;
 
 //Enums Declarations
@@ -659,8 +659,6 @@ void CreateNewRoot(Table* table, uint32_t right_child_page_num) {
 
 void UpdateInternalNodeKey(void* node, uint32_t oldKey, uint32_t newKey) {
     uint32_t oldChildIndex = InternalNodeFindChild(node, oldKey);
-    cout<< "The index in UpdateInternalNodeKey is";
-    cout<< oldChildIndex;
     *InternalNodeKey(node, oldChildIndex) = newKey;
 }
 
@@ -688,7 +686,6 @@ void InternalNodeInsert(Table* table, uint32_t parentPageNum, uint32_t childPage
     uint32_t rightChildPageNum = *InternalNodeRightChild(parent);
     // An internal node with a right child of INVALID_PAGE_NUM is empty
 
-    cout<<rightChildPageNum;
     if(rightChildPageNum == INVALID_PAGE_NUM) {
         *InternalNodeRightChild(parent) = childPageNum;
         return;
@@ -700,7 +697,7 @@ void InternalNodeInsert(Table* table, uint32_t parentPageNum, uint32_t childPage
         // Replace Right Child
 
         *InternalNodeChild(parent, originalNumKeys) = rightChildPageNum;
-        *InternalNodeKey(parent, originalNumKeys) = childMinKey;
+        *InternalNodeKey(parent, originalNumKeys) =  GetNodeMaxKey(table->pager, rightChild);
         *InternalNodeRightChild(parent) = childPageNum;
     }
     else {
@@ -870,17 +867,17 @@ void LeafNodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
     void * node = GetPage(cursor->table->pager, cursor->pageNum);
     uint32_t numOfCells = *LeafNodeNumCells(node);
     for(int i = cursor->cellNum + 1 ; i < numOfCells; i++) {
-        memcpy(LeafNodeCell(node, i-1), LeafNodeCell(node, i), LEAF_NODE_CELL_SIZE);
+        Row row;
+        DeserializeRow(LeafNodeValue(node, i), &row);
+        SerializeRow(&row, LeafNodeValue(node, i - 1));
+        *LeafNodeKey(node, i-1) = *LeafNodeKey(node, i);
+        cout<<*LeafNodeKey(node, i);cout<<'\n';
     }
     *LeafNodeNumCells(node) = numOfCells - 1;
     if(*NodeParent(node) != NULL) {
         void* parent = GetPage(cursor->table->pager, *NodeParent(node));
 
-        //If the node is the rightmost child of the parent
-        if(*InternalNodeRightChild(parent) == rowIdToDelete) {
-            *InternalNodeKey(parent, *InternalNodeNumKeys(parent) - 1) = *LeafNodeKey(node, 0);
-            return;
-        }
+        //If the node is the rightmost child of the parent we donot need to update the parent
 
         //If the child isn't the rightmost child we run a loop
         int indexOfKeyInParent = 0;
@@ -923,21 +920,22 @@ void BorrowFromRightSiblingLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* no
     }
 
     //Then we loop over the keys if the above condition is not satisfied
-    for(int i=1; i<*InternalNodeNumKeys(parent) - 1; i++) {
-        if(*InternalNodeChild(parent, i) == nextNode) {
-            *InternalNodeKey(parent, i - 1) = *LeafNodeKey(next, 0);
+    for(int i=0; i<*InternalNodeNumKeys(parent); i++) {
+        if(*InternalNodeChild(parent, i) == cursor->pageNum) {
+            *InternalNodeKey(parent, i) = *LeafNodeKey(node, *InternalNodeNumKeys(node) - 1);
             break;
         }
     }
 }
 
 void BorrowFromLeftSiblingLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, uint32_t prevNode) {
+    cout<<"HERE";
     void* prev = GetPage(cursor->table->pager, prevNode);
-    int numOfCells = *LeafNodeNumCells(node);
+    uint32_t numOfCells = *LeafNodeNumCells(node);
     uint32_t key = *LeafNodeKey(prev, *LeafNodeNumCells(prev) - 1);
     Row rowToShift;
     DeserializeRow(LeafNodeValue(prev, *LeafNodeNumCells(prev) - 1), &rowToShift);
-    for(int i=0; i<*LeafNodeNumCells(node); i++) {
+    for(int i=*LeafNodeNumCells(node) - 1; i>=0; i--) {
         Row row;
         DeserializeRow(LeafNodeValue(node, i), &row);
         SerializeRow(&row, LeafNodeValue(node, i + 1));
@@ -951,22 +949,21 @@ void BorrowFromLeftSiblingLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* nod
 
     //If the node is rightmost child of the parent
     if(*InternalNodeRightChild(parent) == cursor->pageNum) {
-        *InternalNodeKey(parent, *InternalNodeNumKeys(parent) - 1) = *LeafNodeKey(node, 0);
-        *LeafNodeNumCells(node) = numOfCells + 1;
-        *LeafNodeNumCells(prev) = *LeafNodeNumCells(prev) - 1;
+        *InternalNodeKey(parent, *InternalNodeNumKeys(parent) - 1) = *LeafNodeKey(prev, *InternalNodeNumKeys(prev) - 1);
         return;
     }
 
     //If the node is not the rightmost child
-    for(int i=1; i<*InternalNodeNumKeys(parent) - 1; i++) {
+    for(int i=0; i<*InternalNodeNumKeys(parent) - 1; i++) {
         if(*InternalNodeChild(parent, i) == cursor->pageNum) {
-            *InternalNodeKey(node, i -1) = *LeafNodeKey(node, 0);
+            *InternalNodeKey(parent, i -1) = *LeafNodeKey(prev, *InternalNodeNumKeys(prev) - 1);
             break;
         }
     }
 }
 
 void MergeSiblingLeftLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, uint32_t prevNode) {
+    cout<<"HEYYY"
     void* prev = GetPage(cursor->table->pager, prevNode);
     int numOfCells = *LeafNodeNumCells(node);
     void* parent = GetPage(cursor->table->pager, *NodeParent(prev));
@@ -979,7 +976,7 @@ void MergeSiblingLeftLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, ui
         *LeafNodeKey(prev, index) = *LeafNodeKey(node, i);
         index++;
     }
-    *LeafNodeNumCells(prev) = *LeafNodeNumCells(prev) + *LeafNodeNumCells(node);
+    *LeafNodeNumCells(prev) = *LeafNodeNumCells(prev) + numOfCells;
 
     if(*InternalNodeRightChild(parent) == cursor->pageNum) {
         *InternalNodeRightChild(parent) = prevNode;
@@ -996,6 +993,7 @@ void MergeSiblingLeftLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, ui
     for(int i= shiftingInParent + 1; i<*InternalNodeNumKeys(parent); i++) {
         *InternalNodeKey(parent, i - 1) = *InternalNodeKey(parent, i);
     }
+    *InternalNodeKey(parent, shiftingInParent - 1) = *LeafNodeKey(prev, *LeafNodeNumCells(prev) - 1);
     *InternalNodeNumKeys(parent) = *InternalNodeNumKeys(parent) - 1;
 }
 
@@ -1029,7 +1027,7 @@ void MergeSiblingRightLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, u
     for(int i=shiftingInParent+1; i<*InternalNodeNumKeys(parent); i++) {
         *InternalNodeKey(parent, i - 1) = *InternalNodeKey(parent, i);
     }
-
+    *InternalNodeKey(parent, shiftingInParent - 1) = *LeafNodeKey(node, *LeafNodeNumCells(node) - 1);
     *InternalNodeNumKeys(parent) = *InternalNodeNumKeys(parent) - 1;    
 }
 
@@ -1061,22 +1059,21 @@ void BorrowFromLeftSiblingInternal(Cursor* cursor, int indexInParent, void* node
     void* parent = GetPage(cursor->table->pager, *NodeParent(prev));
 
     //Made space for the new key 
-    for(int i=0; i<*InternalNodeNumKeys(node); i++) {
+    for(int i=*InternalNodeNumKeys(node) - 1; i>=0; i--) {
         *InternalNodeKey(node, i+1) = *InternalNodeKey(node, i);
         *InternalNodeChild(node, i+1) = *InternalNodeChild(node, i); 
     }
 
     //Copied the new key into node
-    *InternalNodeKey(node, 0) = *InternalNodeKey(parent, indexInParent - 1);
+    *InternalNodeKey(node, 0) = *InternalNodeKey(parent, indexInParent);
 
     //Change the parent key to the new one
-    *InternalNodeKey(parent, indexInParent - 1) = *InternalNodeKey(prev, *InternalNodeNumKeys(prev) - 1);
+    *InternalNodeKey(parent, indexInParent) = *InternalNodeKey(prev, *InternalNodeNumKeys(prev) - 1);
 
     uint32_t prevRightMostChild = *InternalNodeRightChild(prev);
     *InternalNodeChild(node, 0) = prevRightMostChild;
 
     //Delete the last key and righmost child from prev
-    uint32_t newRightmostChildPRev = *InternalNodeChild(prev, *InternalNodeNumKeys(prev) - 1);
     *InternalNodeRightChild(prev) = *InternalNodeChild(prev, *InternalNodeNumKeys(prev) - 1);
     *InternalNodeNumKeys(prev) = *InternalNodeNumKeys(prev) - 1;
 }
@@ -1102,7 +1099,7 @@ void MergeSiblingRightInternal(Cursor* cursor, int indexInParent, void* node, vo
     }
 
     //Insert next node's keys and child in node
-    *InternalNodeChild(node, *InternalNodeNumKeys(node) - 1) = *InternalNodeRightChild(node);
+    *InternalNodeChild(node, *InternalNodeNumKeys(node) - 1) = *InternalNodeChild(next, 0);
 
     int index = *InternalNodeNumKeys(node);
     for(int i=0; i<*InternalNodeNumKeys(next); i++) {
@@ -1172,22 +1169,23 @@ void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
             }
 
             if(next && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(nextNode) > LEAF_NODE_MIN_CELLS) {
+                cout<<"1";
                 BorrowFromRightSiblingLeaf(cursor, rowIdToDelete, node, next);
             }
 
             if(prev && *NodeParent(prevNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) > LEAF_NODE_MIN_CELLS) {
-              
+                cout<<"2";
                 BorrowFromLeftSiblingLeaf(cursor, rowIdToDelete, node, prev);
             }
 
             if(next && *NodeParent(nextNode) == *NodeParent(node) && *LeafNodeNumCells(nextNode) <= LEAF_NODE_MIN_CELLS) {
-             
+                cout<<"3";
                 MergeSiblingRightLeaf(cursor, rowIdToDelete, node, next);
             }
 
             if(prev && *NodeParent(prevNode) == *NodeParent(node) && *LeafNodeNumCells(prevNode) <= LEAF_NODE_MIN_CELLS) {
-              
-                MergeSiblingLeftLeaf(cursor, rowIdToDelete, node, next);
+                cout<<"4";
+                MergeSiblingLeftLeaf(cursor, rowIdToDelete, node, prev);
             }
         }
         else if(IsNodeRoot(node)) {
