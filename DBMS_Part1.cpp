@@ -849,7 +849,9 @@ void InternalNodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
             break;
         }
     }
+
     if(indexOfKey != -1) {
+        cout<<"NOT HERE";
         void* child = GetPage(cursor->table->pager, *InternalNodeChild(node, indexOfKey));
 
         while(GetNodeType(child) != NODE_LEAF) {
@@ -861,6 +863,7 @@ void InternalNodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
         }
         *InternalNodeKey(node, indexOfKey) = *LeafNodeKey(child, *InternalNodeNumKeys(child) - 1);
     }
+    cout<<"OUTING";
 }
 
 void LeafNodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {   
@@ -949,6 +952,7 @@ void BorrowFromLeftSiblingLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* nod
 
     //If the node is rightmost child of the parent
     if(*InternalNodeRightChild(parent) == cursor->pageNum) {
+        cout<<"Ayushi";
         *InternalNodeKey(parent, *InternalNodeNumKeys(parent) - 1) = *LeafNodeKey(prev, *InternalNodeNumKeys(prev) - 1);
         return;
     }
@@ -960,10 +964,11 @@ void BorrowFromLeftSiblingLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* nod
             break;
         }
     }
+
 }
 
 void MergeSiblingLeftLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, uint32_t prevNode) {
-    cout<<"HEYYY"
+    cout<<"HEYYY";
     void* prev = GetPage(cursor->table->pager, prevNode);
     int numOfCells = *LeafNodeNumCells(node);
     void* parent = GetPage(cursor->table->pager, *NodeParent(prev));
@@ -979,6 +984,7 @@ void MergeSiblingLeftLeaf(Cursor* cursor, uint32_t rowIdToDelete, void* node, ui
     *LeafNodeNumCells(prev) = *LeafNodeNumCells(prev) + numOfCells;
 
     if(*InternalNodeRightChild(parent) == cursor->pageNum) {
+        cout<<"HEYYHERE";
         *InternalNodeRightChild(parent) = prevNode;
         *InternalNodeNumKeys(parent) = *InternalNodeNumKeys(parent) - 1;
         return;
@@ -1141,14 +1147,18 @@ void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
     int sizeOfNode;
     bool minCapacityInNode;
     if(GetNodeType(node) == NODE_LEAF)  {
+        cout<<"Leaf NODE: ";cout<<*LeafNodeKey(node, 0);
         LeafNodeDelete(cursor, rowIdToDelete);
         sizeOfNode = *LeafNodeNumCells(node);
         minCapacityInNode = sizeOfNode < LEAF_NODE_MIN_CELLS ? true : false;
     }
     else{
+        if(IsNodeRoot(node)) {
+            cout<<"Root Entered";
+        }
         InternalNodeDelete(cursor, rowIdToDelete);
         sizeOfNode = *InternalNodeNumKeys(node);
-        minCapacityInNode = sizeOfNode < INTERNAL_NODE_MIN_CELLS ? true : false;
+        minCapacityInNode = sizeOfNode < INTERNAL_NODE_MIN_CELLS - 1? true : false;
     }
 
     if(minCapacityInNode) {
@@ -1248,6 +1258,7 @@ void NodeDelete(Cursor* cursor, uint32_t rowIdToDelete) {
         }
     }
     if(IsNodeRoot(node)) {
+        cout<<"Root Processed";
         return;
     }
     if(*NodeParent(node) != NULL || IsNodeRoot(GetPage(cursor->table->pager, *NodeParent(node)))) {
@@ -1296,6 +1307,7 @@ ExecuteResult ExecuteDelete(Statement* statement, Table* table) {
     Cursor* cursor = TableFind(table, rowIdToDelete);
 
     NodeDelete(cursor, rowIdToDelete);
+    cout<<"Out Of deletion";
     return EXECUTE_SUCCESS;
 }
 
